@@ -49,7 +49,6 @@ New-AzSynapseWorkspace -ResourceGroupName $resourceGroupName `
     -Location $region `
     -DefaultDataLakeStorageAccountName $dataLakeAccountName `
     -DefaultDataLakeStorageFilesystem $fileSystemName `
-    -SqlAdministratorLogin "sqladmin" `
     -SqlAdministratorLoginPassword $adminPassword `
     -EnableManagedVirtualNetwork `
     -PublicNetworkAccess Disabled
