@@ -4,14 +4,12 @@
   "parameters": {
     "workspaceName": {
       "type": "String",
-      "defaultValue": "cuoiky-synapse",
       "metadata": {
         "description": "Synapse Workspace name"
       }
     },
     "dataLakeAccountName": {
       "type": "String",
-      "defaultValue": "tranghuyen",
       "metadata": {
         "description": "Azure storage account name for data lake."
       }
@@ -48,8 +46,8 @@
     }
   },
   "variables": {
-    "location": "Southeast Asia",
-    "defaultDataLakeStorageFilesystemName": "data",
+    "location": "[resourceGroup().location]",
+    "defaultDataLakeStorageFilesystemName": "files",
     "computeSubnetId": "",
     "sqlSKU": "DW100c",
     "storageBlobDataOwnerRoleID": "b7e6dc6d-f1e8-4753-8033-0f276bb0955b",
@@ -71,11 +69,11 @@
       "apiVersion": "2019-10-01",
       "dependsOn": [],
       "properties": {
-        "tags": {
-          "DeploymentId": "[parameters('uniqueSuffix')]"
-        }
+          "tags": {
+              "DeploymentId": "[parameters('uniqueSuffix')]"
+          }
       }
-    },
+  },
     {
       "type": "Microsoft.Storage/storageAccounts",
       "apiVersion": "2019-06-01",
@@ -103,6 +101,43 @@
           ]
         }
       ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices",
+      "apiVersion": "2019-06-01",
+      "name": "[concat(parameters('dataLakeAccountName'), '/default')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('dataLakeAccountName'))]"
+      ],
+      "sku": {
+        "name": "Standard_LRS",
+        "tier": "Standard"
+      },
+      "properties": {
+        "cors": {
+          "corsRules": []
+        },
+        "deleteRetentionPolicy": {
+          "enabled": false
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/fileServices",
+      "apiVersion": "2019-06-01",
+      "name": "[concat(parameters('dataLakeAccountName'), '/default')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('dataLakeAccountName'))]"
+      ],
+      "sku": {
+        "name": "Standard_LRS",
+        "tier": "Standard"
+      },
+      "properties": {
+        "cors": {
+          "corsRules": []
+        }
+      }
     },
     {
       "type": "Microsoft.Synapse/workspaces",
@@ -141,6 +176,74 @@
           }
         }
       ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers/providers/roleAssignments",
+      "apiVersion": "2018-09-01-preview",
+      "name": "[concat(parameters('dataLakeAccountName'), '/default/', variables('defaultDataLakeStorageFilesystemName'), '/Microsoft.Authorization/',  guid(concat(resourceGroup().id, '/', variables('storageBlobDataOwnerRoleID'), '/', parameters('workspaceName'))))]",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[concat('Microsoft.Synapse/workspaces/', parameters('workspaceName'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataOwnerRoleID'))]",
+        "principalId": "[reference(concat('Microsoft.Synapse/workspaces/', parameters('workspaceName')), '2019-06-01-preview', 'Full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      }
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2018-09-01-preview",
+      "name": "[guid(concat(resourceGroup().id, '/', variables('storageBlobDataOwnerRoleID'), '/', parameters('workspaceName'), '2'))]",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[concat('Microsoft.Synapse/workspaces/', parameters('workspaceName'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataOwnerRoleID'))]",
+        "principalId": "[reference(concat('Microsoft.Synapse/workspaces/', parameters('workspaceName')), '2019-06-01-preview', 'Full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      }
+    },
+    {
+        "type": "Microsoft.Synapse/workspaces/sqlPools",
+        "apiVersion": "2019-06-01-preview",
+        "name": "[concat(parameters('workspaceName'), '/', parameters('sqlDatabaseName'))]",
+        "location": "[variables('location')]",
+        "sku": {
+          "name": "[variables('sqlSKU')]"
+        },
+        "dependsOn": [
+          "[concat('Microsoft.Synapse/workspaces/', parameters('workspaceName'))]"
+        ],
+        "properties": {
+          "createMode": "Default",
+          "collation": "SQL_Latin1_General_CP1_CI_AS"
+        }
+      },
+    {
+      "type": "Microsoft.Synapse/workspaces/bigDataPools",
+      "apiVersion": "2019-06-01-preview",
+      "name": "[concat(parameters('workspaceName'), '/', parameters('sparkPoolName'))]",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[concat('Microsoft.Synapse/workspaces/', parameters('workspaceName'))]"
+      ],
+      "properties": {
+        "nodeCount": "[variables('sparkNodeCount')]",
+        "nodeSizeFamily": "[variables('sparkNodeSizeFamily')]",
+        "nodeSize": "[variables('sparkNodeSize')]",
+        "autoScale": {
+          "enabled": "[variables('sparkAutoScaleEnabled')]",
+          "minNodeCount": "[variables('sparkMinNodeCount')]",
+          "maxNodeCount": "[variables('sparkMaxNodeCount')]"
+        },
+        "autoPause": {
+          "enabled": "[variables('sparkAutoPauseEnabled')]",
+          "delayInMinutes": "[variables('sparkAutoPauseDelayInMinutes')]"
+        },
+        "sparkVersion": "[variables('sparkVersion')]"
+      }
     }
-  ]
+  ] 
 }
