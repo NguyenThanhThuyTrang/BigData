@@ -17,33 +17,28 @@ Write-Output "Chọn Subscription mặc định..."
 Select-AzSubscription -SubscriptionId $subscriptionID
 
 # Tạo Azure Synapse Workspace
-Write-Output "Tạo Synapse Workspace '$synapseWorkspace'..."
-New-AzSynapseWorkspace -Name $synapseWorkspace `
-                       -ResourceGroupName "DefaultResourceGroup" `
-                       -Location $region `
-                       -DefaultDataLakeStorageAccountName $dataLakeAccountName `
-                       -DefaultDataLakeStorageFilesystem "synapse"
+write-host "Creating $synapseWorkspace Synapse Analytics workspace in $resourceGroupName resource group..."
+write-host "(This may take some time!)"
+New-AzResourceGroupDeployment -ResourceGroupName $resourceGroupName `
+  -TemplateFile "setup.json" `
+  -Mode Complete `
+  -workspaceName $synapseWorkspace `
+  -dataLakeAccountName $dataLakeAccountName `
+  -sparkPoolName $sparkPool `
+  -sqlDatabaseName $sqlDatabaseName `
+  -sqlUser $sqlUser `
+  -sqlPassword $sqlPassword `
+  -Force
 
-# Tạo Spark Pool
-Write-Output "Tạo Spark Pool '$sparkPool'..."
-New-AzSynapseSparkPool -WorkspaceName $synapseWorkspace `
-                       -Name $sparkPool `
-                       -NodeCount 3 `
-                       -NodeSize Small
+# Make the current user and the Synapse service principal owners of the data lake blob store
+write-host "Granting permissions on the $dataLakeAccountName storage account..."
+write-host "(you can ignore any warnings!)"
+$subscriptionId = (Get-AzContext).Subscription.Id
+$userName = ((az ad signed-in-user show) | ConvertFrom-JSON).UserPrincipalName
+$id = (Get-AzADServicePrincipal -DisplayName $synapseWorkspace).id
+New-AzRoleAssignment -Objectid $id -RoleDefinitionName "Storage Blob Data Owner" -Scope "/subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Storage/storageAccounts/$dataLakeAccountName" -ErrorAction SilentlyContinue;
+New-AzRoleAssignment -SignInName $userName -RoleDefinitionName "Storage Blob Data Owner" -Scope "/subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Storage/storageAccounts/$dataLakeAccountName" -ErrorAction SilentlyContinue;
 
-# Tạo SQL Database
-Write-Output "Tạo SQL Pool '$sqlDatabaseName'..."
-New-AzSynapseSqlPool -WorkspaceName $synapseWorkspace `
-                     -Name $sqlDatabaseName `
-                     -PerformanceLevel "DW100c"
-
-Write-Output "Cấu hình hoàn tất. Các tài nguyên sau đã được tạo:"
-Write-Output "Workspace: $synapseWorkspace"
-Write-Output "Data Lake Account: $dataLakeAccountName"
-Write-Output "Spark Pool: $sparkPool"
-Write-Output "SQL Database: $sqlDatabaseName"
-Write-Output "Subscription: $subscriptionName"
-Write-Output "Region: $region"
 
 # Create database
 write-host "Creating the $sqlDatabaseName database..."
@@ -58,6 +53,10 @@ Get-ChildItem "./data/*.txt" -File | Foreach-Object {
     $table = $_.Name.Replace(".txt","")
     bcp dbo.$table in $file -S "$synapseWorkspace.sql.azuresynapse.net" -U $sqlUser -P $sqlPassword -d $sqlDatabaseName -f $file.Replace("txt", "fmt") -q -k -E -b 5000
 }
+
+# Pause SQL Pool
+write-host "Pausing the $sqlDatabaseName SQL Pool..."
+Suspend-AzSynapseSqlPool -WorkspaceName $synapseWorkspace -Name $sqlDatabaseName -AsJob
 
 # Upload files
 write-host "Loading data..."
