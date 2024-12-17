@@ -31,6 +31,9 @@ Write-Host "Creating $resourceGroupName resource group in $region ..."
 $resourceGroupName = "cuoiky"
 New-AzResourceGroup -Name $resourceGroupName -Location $region | Out-Null
 
+#random suffix
+[string]$suffix =  -join ((48..57) + (97..122) | Get-Random -Count 7 | % {[char]$_})
+
 # Tạo Synapse workspace
 write-host "Creating $synapseWorkspace Synapse Analytics workspace in $resourceGroupName resource group..."
 write-host "(This may take some time!)"
@@ -43,6 +46,7 @@ New-AzResourceGroupDeployment -ResourceGroupName $resourceGroupName `
   -sqlDatabaseName $sqlDatabaseName `
   -sqlUser $sqlUser `
   -sqlPassword $sqlPassword `
+  -uniqueSuffix $suffix `
   -Force
 
 # Gán quyền cho Data Lake Blob Store
