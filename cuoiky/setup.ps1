@@ -1,47 +1,47 @@
-# Chọn subscription
-Write-Host "Setting subscription to '$subscriptionName'..."
-$selectedSub = Get-AzSubscription | Where-Object { $_.Id -eq $subscriptionId }
+# Định nghĩa các biến mặc định
+$synapseWorkspace = "cuoiky-workspace"         # Tên Synapse workspace
+$dataLakeAccountName = "tranghuyen"            # Tên Azure Data Lake Storage Account
+$sparkPool = "sparkpool"                      # Tên Spark pool
+$sqlDatabaseName = "sqlpool"                  # Tên SQL pool
+$subscriptionName = "Azure subscription 1"    # Tên Subscription
+$subscriptionID = "063ab6f7-120f-4b12-8d36-8ea6f30a4b25" # Subscription ID
+$region = "Southeast Asia"                    # Khu vực hoạt động
 
-if ($null -eq $selectedSub) {
-    Write-Error "Subscription '$subscriptionName' with ID '$subscriptionId' not found. Please verify the details."
-    exit
-}
+# Đăng nhập Azure và chọn Subscription
+Write-Output "Đăng nhập vào Azure..."
+Connect-AzAccount
 
-Select-AzSubscription -SubscriptionId $subscriptionId
-az account set --subscription $subscriptionId
+Write-Output "Chọn Subscription mặc định..."
+Select-AzSubscription -SubscriptionId $subscriptionID
 
-Write-Host "Subscription '$subscriptionName' (ID: $subscriptionId) has been set."
+# Tạo Azure Synapse Workspace
+Write-Output "Tạo Synapse Workspace '$synapseWorkspace'..."
+New-AzSynapseWorkspace -Name $synapseWorkspace `
+                       -ResourceGroupName "DefaultResourceGroup" `
+                       -Location $region `
+                       -DefaultDataLakeStorageAccountName $dataLakeAccountName `
+                       -DefaultDataLakeStorageFilesystem "synapse"
 
-# Tạo Synapse Workspace
-Write-Host "Creating Synapse Workspace: $synapseWorkspace in region: $region"
-$workspaceExists = Get-AzSynapseWorkspace -Name $synapseWorkspace -ErrorAction SilentlyContinue
+# Tạo Spark Pool
+Write-Output "Tạo Spark Pool '$sparkPool'..."
+New-AzSynapseSparkPool -WorkspaceName $synapseWorkspace `
+                       -Name $sparkPool `
+                       -NodeCount 3 `
+                       -NodeSize Small
 
-if ($null -eq $workspaceExists) {
-    New-AzSynapseWorkspace `
-        -ResourceGroupName "DefaultResourceGroup" `
-        -Name $synapseWorkspace `
-        -Location $region `
-        -DefaultDataLakeStorageAccountName $dataLakeAccountName `
-        -DefaultDataLakeStorageFilesystem "filesystem" `
-        -SqlAdministratorLogin $sqlUser `
-        -SqlAdministratorLoginPassword (ConvertTo-SecureString $sqlPassword -AsPlainText -Force)
+# Tạo SQL Database
+Write-Output "Tạo SQL Pool '$sqlDatabaseName'..."
+New-AzSynapseSqlPool -WorkspaceName $synapseWorkspace `
+                     -Name $sqlDatabaseName `
+                     -PerformanceLevel "DW100c"
 
-    Write-Host "Synapse Workspace '$synapseWorkspace' created successfully in region '$region'."
-}
-else {
-    Write-Host "Synapse Workspace '$synapseWorkspace' already exists."
-}
-
-# Thông tin cấu hình cuối cùng
-Write-Host "--------------------------------------------"
-Write-Host "Subscription: $subscriptionName (ID: $subscriptionId)"
-Write-Host "Region: $region"
-Write-Host "Workspace: $synapseWorkspace"
-Write-Host "Data Lake: $dataLakeAccountName"
-Write-Host "Spark Pool: $sparkPool"
-Write-Host "SQL Database: $sqlDatabaseName"
-Write-Host "SQL User: $sqlUser"
-Write-Host "--------------------------------------------"
+Write-Output "Cấu hình hoàn tất. Các tài nguyên sau đã được tạo:"
+Write-Output "Workspace: $synapseWorkspace"
+Write-Output "Data Lake Account: $dataLakeAccountName"
+Write-Output "Spark Pool: $sparkPool"
+Write-Output "SQL Database: $sqlDatabaseName"
+Write-Output "Subscription: $subscriptionName"
+Write-Output "Region: $region"
 
 # Create database
 write-host "Creating the $sqlDatabaseName database..."
@@ -56,10 +56,6 @@ Get-ChildItem "./data/*.txt" -File | Foreach-Object {
     $table = $_.Name.Replace(".txt","")
     bcp dbo.$table in $file -S "$synapseWorkspace.sql.azuresynapse.net" -U $sqlUser -P $sqlPassword -d $sqlDatabaseName -f $file.Replace("txt", "fmt") -q -k -E -b 5000
 }
-
-# Pause SQL Pool
-write-host "Pausing the $sqlDatabaseName SQL Pool..."
-Suspend-AzSynapseSqlPool -WorkspaceName $synapseWorkspace -Name $sqlDatabaseName -AsJob
 
 # Upload files
 write-host "Loading data..."
