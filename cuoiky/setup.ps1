@@ -6,6 +6,8 @@ $sqlDatabaseName = "sqlpool"                  # Tên SQL pool
 $subscriptionName = "Azure subscription 1"    # Tên Subscription
 $subscriptionID = "063ab6f7-120f-4b12-8d36-8ea6f30a4b25" # Subscription ID
 $region = "Southeast Asia"                    # Khu vực hoạt động
+$sqlUser = "SQLUser"
+$sqlPassword = "Chanchan123@"
 
 # Đăng nhập Azure và chọn Subscription
 Write-Output "Đăng nhập vào Azure..."
