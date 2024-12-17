@@ -1,4 +1,9 @@
-# Định nghĩa các biến mặc định
+Clear-Host
+write-host "Starting script at $(Get-Date)"
+Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+Install-Module -Name Az.Synapse -Force
+
+# Biến mặc định
 $synapseWorkspace = "cuoiky-workspace"         # Tên Synapse workspace
 $dataLakeAccountName = "tranghuyen"            # Tên Azure Data Lake Storage Account
 $sparkPool = "sparkpool"                      # Tên Spark pool
@@ -9,14 +14,24 @@ $region = "Southeast Asia"                    # Khu vực hoạt động
 $sqlUser = "SQLUser"
 $sqlPassword = "Chanchan123@"
 
-# Đăng nhập Azure và chọn Subscription
-Write-Output "Đăng nhập vào Azure..."
-Connect-AzAccount
-
-Write-Output "Chọn Subscription mặc định..."
+# Xác nhận subscription
 Select-AzSubscription -SubscriptionId $subscriptionID
+az account set --subscription $subscriptionID
 
-# Tạo Azure Synapse Workspace
+# Đăng ký resource providers
+Write-Host "Registering resource providers...";
+$provider_list = "Microsoft.Synapse", "Microsoft.Sql", "Microsoft.Storage", "Microsoft.Compute"
+foreach ($provider in $provider_list) {
+    Register-AzResourceProvider -ProviderNamespace $provider | Out-Null
+    Write-Host "$provider is successfully registered."
+}
+
+# Tạo resource group
+Write-Host "Creating $resourceGroupName resource group in $region ..."
+$resourceGroupName = "cuoiky"
+New-AzResourceGroup -Name $resourceGroupName -Location $region | Out-Null
+
+# Tạo Synapse workspace
 write-host "Creating $synapseWorkspace Synapse Analytics workspace in $resourceGroupName resource group..."
 write-host "(This may take some time!)"
 New-AzResourceGroupDeployment -ResourceGroupName $resourceGroupName `
@@ -30,7 +45,7 @@ New-AzResourceGroupDeployment -ResourceGroupName $resourceGroupName `
   -sqlPassword $sqlPassword `
   -Force
 
-# Make the current user and the Synapse service principal owners of the data lake blob store
+# Gán quyền cho Data Lake Blob Store
 write-host "Granting permissions on the $dataLakeAccountName storage account..."
 write-host "(you can ignore any warnings!)"
 $subscriptionId = (Get-AzContext).Subscription.Id
@@ -39,12 +54,11 @@ $id = (Get-AzADServicePrincipal -DisplayName $synapseWorkspace).id
 New-AzRoleAssignment -Objectid $id -RoleDefinitionName "Storage Blob Data Owner" -Scope "/subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Storage/storageAccounts/$dataLakeAccountName" -ErrorAction SilentlyContinue;
 New-AzRoleAssignment -SignInName $userName -RoleDefinitionName "Storage Blob Data Owner" -Scope "/subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Storage/storageAccounts/$dataLakeAccountName" -ErrorAction SilentlyContinue;
 
-
-# Create database
+# Tạo database
 write-host "Creating the $sqlDatabaseName database..."
 sqlcmd -S "$synapseWorkspace.sql.azuresynapse.net" -U $sqlUser -P $sqlPassword -d $sqlDatabaseName -I -i setup.sql
 
-# Load data
+# Tải dữ liệu
 write-host "Loading data..."
 Get-ChildItem "./data/*.txt" -File | Foreach-Object {
     write-host ""
@@ -54,12 +68,12 @@ Get-ChildItem "./data/*.txt" -File | Foreach-Object {
     bcp dbo.$table in $file -S "$synapseWorkspace.sql.azuresynapse.net" -U $sqlUser -P $sqlPassword -d $sqlDatabaseName -f $file.Replace("txt", "fmt") -q -k -E -b 5000
 }
 
-# Pause SQL Pool
+# Tạm dừng SQL Pool
 write-host "Pausing the $sqlDatabaseName SQL Pool..."
 Suspend-AzSynapseSqlPool -WorkspaceName $synapseWorkspace -Name $sqlDatabaseName -AsJob
 
-# Upload files
-write-host "Loading data..."
+# Tải tập tin CSV lên Data Lake
+write-host "Uploading CSV files to Data Lake..."
 $storageAccount = Get-AzStorageAccount -ResourceGroupName $resourceGroupName -Name $dataLakeAccountName
 $storageContext = $storageAccount.Context
 Get-ChildItem "./files/*.csv" -File | Foreach-Object {
@@ -69,9 +83,5 @@ Get-ChildItem "./files/*.csv" -File | Foreach-Object {
     $blobPath = "sales_data/$file"
     Set-AzStorageBlobContent -File $_.FullName -Container "files" -Blob $blobPath -Context $storageContext
 }
-
-# Create KQL script
-# Removing until fix for Bad Request error is resolved
-# New-AzSynapseKqlScript -WorkspaceName $synapseWorkspace -DefinitionFile "./files/ingest-data.kql"
 
 write-host "Script completed at $(Get-Date)"
